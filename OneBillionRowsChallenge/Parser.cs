@@ -50,10 +50,11 @@ public unsafe class Parser
         {
             // Intentionally use the same starting point for IndexOf to avoid dependency chains (higher ILP)
             int separatorIndex = Utils.IndexOf(ref startRef, 50, (byte)';');
-            int decimalIndex = Utils.IndexOf(ref startRef, 50, (byte)'.');
             int newLineIndex = Utils.IndexOf(ref startRef, 50, (byte)'\n');
             
-            // Todo: Parse int, compute min/max/mean and insert in map
+            int temp = Utils.ParseIntP10(ref Unsafe.Add(ref startRef, separatorIndex + 1), newLineIndex - separatorIndex - 1);
+            
+            // Todo: compute min/max/mean and insert in map
             
             startRef = ref Unsafe.Add(ref startRef, newLineIndex + 1);
         }

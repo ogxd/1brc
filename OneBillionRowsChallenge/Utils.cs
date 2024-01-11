@@ -49,4 +49,30 @@ public static class Utils
             
         return pos;
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int ParseIntP10(ref byte startRef, int length)
+    {
+        int sign = 1;
+        int value = 0;
+
+        ref byte endRef = ref Unsafe.Add<byte>(ref startRef, length - 2);
+
+        while (Unsafe.IsAddressLessThan(ref startRef, ref endRef))
+        {
+            byte c = startRef;
+
+            if (c == '-') {
+                sign = -1;
+            } else {
+                value = value * 10 + (c - '0');
+            }
+
+            startRef = ref Unsafe.Add(ref startRef, 1);
+        }
+
+        startRef = ref Unsafe.Add(ref startRef, 1);
+        int firstDecimal = startRef - '0';
+        return sign * (value * 10 + firstDecimal);
+    }
 }
