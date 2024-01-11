@@ -21,18 +21,14 @@ public unsafe class Parser
         // Start processing
         int parallelism = Environment.ProcessorCount;
         var threads = new Thread[parallelism];
-        var chunksData = new ChunkData[parallelism];
-        long nextStart = 0;
-        long maxChunkLength = fileSize / parallelism + 50; // Conservative margin
+        var chunks = Chunk.GetChunks(parallelism, bytePtr, fileSize);
         for (int i = 0; i < parallelism; i++)
         {
-            var chunkData = chunksData[i] = new ChunkData(bytePtr, nextStart, maxChunkLength, fileSize);
-            nextStart += chunkData.Length;
-            threads[i] = new Thread(_ => Process(chunkData));
+            threads[i] = new Thread(_ => Process(chunks[i]));
             threads[i].Start();
         }
         
-        Debug.Assert(chunksData.Sum(x => x.Length) == fileSize, "Sum of chunks lengths must be equal to total file size!");
+        Debug.Assert(chunks.Sum(x => x.Length) == fileSize, "Sum of chunks lengths must be equal to total file size!");
 
         // Wait for all threads to complete
         for (int i = 0; i < parallelism; i++)
@@ -41,10 +37,24 @@ public unsafe class Parser
         }
     }
 
-    private void Process(ChunkData chunkData)
+    private void Process(Chunk chunk)
     {
-        ref byte startRef = ref Unsafe.AsRef<byte>(chunkData.PtrStart);
-        ref byte endRef = ref Unsafe.AsRef<byte>(chunkData.PtrStart + chunkData.Length);
+        // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
+        // the odds for instruction level parallelization
+        const int subchunksCount = 4;
+        var subchunks = Chunk.GetChunks(subchunksCount, chunk.PtrStart, chunk.Length);
+        
+        for (int i = 0; i < subchunks.Length; i++)
+        {
+            ProcessSubchunk(subchunks[i]);
+        }
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ProcessSubchunk(Chunk chunk)
+    {
+        ref byte startRef = ref Unsafe.AsRef<byte>(chunk.PtrStart);
+        ref byte endRef = ref Unsafe.AsRef<byte>(chunk.PtrStart + chunk.Length);
 
         while (Unsafe.IsAddressLessThan(ref startRef, ref endRef))
         {
@@ -61,12 +71,12 @@ public unsafe class Parser
     }
 }
 
-public unsafe class ChunkData
+public unsafe class Chunk
 {
     public readonly long Length;
     public readonly byte *PtrStart;
-    
-    public ChunkData(byte* byteRef, long start, long maxLength, long fileSize)
+
+    private Chunk(byte* byteRef, long start, long maxLength, long fileSize)
     {
         PtrStart = byteRef + start;
         
@@ -88,5 +98,20 @@ public unsafe class ChunkData
             }
         }
         Length = maxLength;
+    }
+
+    // Don't inline to leave room in bytecode for methods that require inlining
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static Chunk[] GetChunks(int chunksCount, byte* ptr, long length)
+    {
+        var chunks = new Chunk[chunksCount];
+        long nextStart = 0;
+        long maxChunkLength = length / chunksCount + 50; // Conservative margin
+        for (int i = 0; i < chunks.Length; i++)
+        {
+            var chunk = chunks[i] = new Chunk(ptr, nextStart, maxChunkLength, length);
+            nextStart += chunk.Length;
+        }
+        return chunks;
     }
 }
