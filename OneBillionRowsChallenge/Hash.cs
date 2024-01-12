@@ -21,6 +21,7 @@ public readonly struct Hash : IEquatable<Hash>
 
     public override int GetHashCode() => _low;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Hash GetHash(ref byte b, int length)
     {
         // Inspired from GxHash (by me)

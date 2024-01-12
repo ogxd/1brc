@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
+using System.Runtime.Intrinsics.X86;
 
 namespace OneBillionRowsChallenge;
 
@@ -12,15 +13,13 @@ public static class Utils
     {
         int offset = 0;
         ref Vector128<byte> ptr = ref Unsafe.As<byte, Vector128<byte>>(ref start);
-        NEXT:
-        var vec = AdvSimd.CompareEqual(Vector128.Create(needle), ptr);
-        var vec64 = Unsafe.As<Vector128<byte>, Vector128<ulong>>(ref vec);
-        int lzcLow = BitOperations.TrailingZeroCount(AdvSimd.Extract(vec64, 0));
-        int pos;
-        if (lzcLow == 64)
+    NEXT:
+        if (Sse2.IsSupported)
         {
-            int lzcHigh = BitOperations.TrailingZeroCount(AdvSimd.Extract(vec64, 1));
-            if (lzcHigh == 64)
+            var vec = Sse2.CompareEqual(Vector128.Create(needle), ptr);
+            int mask = Sse2.MoveMask(vec);
+            int tzc = BitOperations.TrailingZeroCount(mask);
+            if (tzc == 32)
             {
                 offset += 16;
                 if (offset > length)
@@ -30,24 +29,53 @@ public static class Utils
                 ptr = ref Unsafe.Add(ref ptr, 1);
                 goto NEXT;
             }
+            int pos = tzc / 8 + offset;         
+            if (pos > length)
+            {
+                return -1;
+            }
+            return pos;
+        }
+        else if (AdvSimd.IsSupported)
+        {
+            var vec = AdvSimd.CompareEqual(Vector128.Create(needle), ptr);
+            var vec64 = Unsafe.As<Vector128<byte>, Vector128<ulong>>(ref vec);
+            int lzcLow = BitOperations.TrailingZeroCount(AdvSimd.Extract(vec64, 0));
+            int pos;
+            if (lzcLow == 64)
+            {
+                int lzcHigh = BitOperations.TrailingZeroCount(AdvSimd.Extract(vec64, 1));
+                if (lzcHigh == 64)
+                {
+                    offset += 16;
+                    if (offset > length)
+                    {
+                        return -1;
+                    }
+                    ptr = ref Unsafe.Add(ref ptr, 1);
+                    goto NEXT;
+                }
+                else
+                {
+                    pos = lzcHigh / 8 + 8;
+                }
+            }
             else
             {
-                pos = lzcHigh / 8 + 8;
+                pos = lzcLow / 8;
             }
-        }
-        else
-        {
-            pos = lzcLow / 8;
-        }
             
-        pos += offset;
+            pos += offset;
             
-        if (pos > length)
-        {
-            return -1;
+            if (pos > length)
+            {
+                return -1;
+            }
+            
+            return pos;
         }
-            
-        return pos;
+
+        throw new NotSupportedException();
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
