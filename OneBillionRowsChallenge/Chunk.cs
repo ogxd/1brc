@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace OneBillionRowsChallenge;
 
@@ -8,7 +7,7 @@ public unsafe class Chunk
 {
     public readonly long Length;
     public readonly byte *PtrStart;
-    public Dictionary<Hash, MinMaxMean>? Data { get; set; }
+    public readonly MinMaxMeanByCityMap Data = new MinMaxMeanByCityMap(500);
 
     internal Chunk(byte* byteRef, long start, long maxLength, long fileSize)
     {
@@ -36,23 +35,9 @@ public unsafe class Chunk
 
     public void MergeChunkData(Chunk otherChunk)
     {
-        if (otherChunk.Data != null)
+        foreach (var pair in otherChunk.Data)
         {
-            Data ??= new Dictionary<Hash, MinMaxMean>();
-            
-            foreach (var pair in otherChunk.Data)
-            {
-                ref MinMaxMean minMaxMean = ref CollectionsMarshal.GetValueRefOrAddDefault(Data, pair.Key, out bool exists);
-                if (exists)
-                {
-                    minMaxMean.Add(pair.Value);
-                }
-                else
-                {
-                    minMaxMean = pair.Value;
-                }
-            }
-
+            Data.Add(pair.Key, pair.Value);
         }
     }
 

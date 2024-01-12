@@ -27,9 +27,12 @@ public unsafe class Parser
         {
             var chunk = chunks[i];
             threads[i] = new Thread(_ => Process(chunk));
+            threads[i].Priority = ThreadPriority.Normal;
             threads[i].Start();
         }
-        
+
+        GC.TryStartNoGCRegion(1_000_000);
+
         // Wait for all threads to complete
         for (int i = 0; i < parallelism; i++)
         {
@@ -53,7 +56,7 @@ public unsafe class Parser
     {
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
         // the odds for instruction level parallelization
-        const int subchunksCount = 8;
+        const int subchunksCount = 1;
         var subchunks = chunk.Split(subchunksCount);
         
         for (int i = 0; i < subchunks.Length; i++)
@@ -70,7 +73,7 @@ public unsafe class Parser
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ProcessSubchunk(Chunk chunk)
     {
-        Dictionary<Hash, MinMaxMean> data = new(500, new Hash.HashComparer());
+        var map = chunk.Data;
         
         ref byte startRef = ref Unsafe.AsRef<byte>(chunk.PtrStart);
         ref byte endRef = ref Unsafe.AsRef<byte>(chunk.PtrStart + chunk.Length);
@@ -83,15 +86,10 @@ public unsafe class Parser
             
             int temp = Utils.ParseIntP10(ref Unsafe.Add(ref startRef, separatorIndex + 1), newLineIndex - separatorIndex - 1);
 
-            ref MinMaxMean d = ref CollectionsMarshal.GetValueRefOrAddDefault(data, Hash.GetHash(ref startRef, separatorIndex), out bool exists);
-            if (!exists) {
-                d = new MinMaxMean();
-            }
-            d.Add(temp);
+            Hash hash = Hash.GetHash(ref startRef, separatorIndex);
+            map.Add(hash, temp);
 
             startRef = ref Unsafe.Add(ref startRef, newLineIndex + 1);
         }
-
-        chunk.Data = data;
     }
 }
