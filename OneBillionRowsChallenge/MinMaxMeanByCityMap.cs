@@ -16,39 +16,39 @@ public class MinMaxMeanByCityMap : IEnumerable<KeyValuePair<Hash, MinMaxMean>>
         }
     }
 
-    private Entry[,] buckets;
-    private int size;
+    private Entry[,] _buckets;
+    private uint _size;
+    private uint _depth;
 
-    public MinMaxMeanByCityMap(int size) {
-        buckets = new Entry[size, MAX_DEPTH];
-        this.size = size;
+    public MinMaxMeanByCityMap(uint size, uint depth) {
+        _buckets = new Entry[size, depth];
+        _size = size;
+        _depth = depth;
     }
 
-    const int MAX_DEPTH = 5;
-
+    [SkipLocalsInit]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetBucketIndex(Hash key) {
-        int hashCode = key.Low;
-        int index = hashCode % size;
-        return Math.Abs(index);
+    private uint GetBucketIndex(Hash key) {
+        uint hashCode = key.Low;
+        uint index = hashCode % _size;
+        return index;
     }
 
+    [SkipLocalsInit]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Add(Hash key, int temp) {
-        int bucketIndex = GetBucketIndex(key);
+    public void Add(Hash key, int temp, out bool newEntry) {
+        uint bucketIndex = GetBucketIndex(key);
 
-        for (int i = 0; i < MAX_DEPTH; i++) {
-            ref var entry = ref buckets[bucketIndex, i];
-            if (entry.Key.Eq == 0 && entry.Key.Low == 0) {
-                MinMaxMean minMaxMean = new MinMaxMean();
-                minMaxMean.Add(temp);
-                entry = new Entry(key, minMaxMean);
+        for (int i = 0; i < _depth; i++) {
+            ref var entry = ref _buckets[bucketIndex, i];
+            if (entry.Key.Eq == 0) {
+                entry = new Entry(key, new MinMaxMean(temp));
+                newEntry = true;
                 return;
             }
             if (entry.Key.Eq == key.Eq) {
-                var value = entry.Value;
-                value.Add(temp); // Merge values if key exists
-                entry.Value = value;
+                entry.Value.Add(temp); // Merge values if key exists
+                newEntry = false;
                 return;
             }
         }
@@ -57,18 +57,16 @@ public class MinMaxMeanByCityMap : IEnumerable<KeyValuePair<Hash, MinMaxMean>>
     }
 
     public void Add(Hash key, MinMaxMean minMaxMean) {
-        int bucketIndex = GetBucketIndex(key);
+        uint bucketIndex = GetBucketIndex(key);
 
-        for (int i = 0; i < MAX_DEPTH; i++) {
-            ref var entry = ref buckets[bucketIndex, i];
-            if (entry.Key.Eq == 0 && entry.Key.Low == 0) {
+        for (int i = 0; i < _depth; i++) {
+            ref var entry = ref _buckets[bucketIndex, i];
+            if (entry.Key.Eq == 0) {
                 entry = new Entry(key, minMaxMean);
                 return;
             }
             if (entry.Key.Eq == key.Eq) {
-                var value = entry.Value;
-                value.Add(minMaxMean); // Merge values if key exists
-                entry.Value = value;
+                entry.Value.Add(minMaxMean); // Merge values if key exists
                 return;
             }
         }
@@ -77,7 +75,7 @@ public class MinMaxMeanByCityMap : IEnumerable<KeyValuePair<Hash, MinMaxMean>>
     }
 
     public IEnumerator<KeyValuePair<Hash, MinMaxMean>> GetEnumerator() {
-        foreach (var entry in buckets) {
+        foreach (var entry in _buckets) {
             if (entry.Key.Eq == 0 && entry.Key.Low == 0) continue;
             yield return new KeyValuePair<Hash, MinMaxMean>(entry.Key, entry.Value);
         }

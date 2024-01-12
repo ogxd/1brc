@@ -6,10 +6,18 @@
         <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        
+        <IsTrimmable>true</IsTrimmable>
+        <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+        <EnableAOTAnalyzer>true</EnableAOTAnalyzer>
+        <TieredCompilation>false</TieredCompilation>
         <PublishAot>true</PublishAot>
         <OptimizationPreference>Speed</OptimizationPreference>
         <IlcInstructionSet>native</IlcInstructionSet>
-        <PublishReadyToRun>true</PublishReadyToRun>
+        <StripSymbols>true</StripSymbols>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <Deterministic>true</Deterministic>
+        <ServerGarbageCollection>false</ServerGarbageCollection>
     </PropertyGroup>
 
 </Project>

@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
@@ -9,15 +8,16 @@ namespace OneBillionRowsChallenge;
 
 public readonly struct Hash
 {
-    public readonly int Low;
+    public readonly uint Low;
     public readonly long Eq;
 
-    private Hash(int low, long eq)
+    private Hash(uint low, long eq)
     {
         Low = low;
         Eq = eq;
     }
-    
+
+    [SkipLocalsInit]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Hash GetHash(ref byte b, int length)
     {
@@ -44,15 +44,6 @@ public readonly struct Hash
             hashVector = X86Aes.EncryptLast(hashVector, keys3);
         }
 
-        return new Hash(hashVector.AsInt32().GetElement(0), hashVector.AsInt64().GetElement(1));
-    }
-
-    public class HashComparer : IEqualityComparer<Hash>
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(Hash x, Hash y) => x.Eq == y.Eq;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetHashCode([DisallowNull] Hash obj) => obj.Low;
+        return new Hash(hashVector.AsUInt32().GetElement(0), hashVector.AsInt64().GetElement(1));
     }
 }

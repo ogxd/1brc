@@ -1,20 +1,19 @@
+using Microsoft.Win32.SafeHandles;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static OneBillionRowsChallenge.Constants;
 
 namespace OneBillionRowsChallenge;
 
-public unsafe class Chunk
+public unsafe readonly struct Chunk
 {
+    public readonly long Start;
     public readonly long Length;
-    public readonly byte *PtrStart;
-    public readonly MinMaxMeanByCityMap Data = new MinMaxMeanByCityMap(500);
 
-    internal Chunk(byte* byteRef, long start, long maxLength, long fileSize)
+    internal Chunk(SafeFileHandle fileHandle, long start, long maxLength, long fileSize)
     {
-        PtrStart = byteRef + start;
-        
         // Realign chunk end
-        if (start + maxLength > fileSize)
+        if (start + maxLength >= fileSize)
         {
             // Last chunk, so we make sure we don't go beyond bounds
             maxLength = fileSize - start;
@@ -23,34 +22,31 @@ public unsafe class Chunk
         {
             // We want to make sure this chunk ends with a \n and next one start with a new
             // city name, so we iterate backwards until we find an \n
-            byteRef += start + maxLength;
-            while (byteRef[0] != (byte)'\n')
+            Span<byte> buffer = stackalloc byte[MAX_ENTRY_WIDTH];
+            int r = RandomAccess.Read(fileHandle, buffer, start + maxLength - buffer.Length);
+            int i = r - 1;
+            while (buffer[i] != CHAR_EOL)
             {
-                byteRef -= 1;
+                i--;
                 maxLength--;
             }
+            maxLength++;
         }
-        Length = maxLength;
-    }
 
-    public void MergeChunkData(Chunk otherChunk)
-    {
-        foreach (var pair in otherChunk.Data)
-        {
-            Data.Add(pair.Key, pair.Value);
-        }
+        Start = start;
+        Length = maxLength;
     }
 
     // Don't inline to leave room in bytecode for methods that require inlining
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public Chunk[] Split(int chunksCount)
+    public Chunk[] Split(SafeFileHandle fileHandle, int chunksCount)
     {
         var chunks = new Chunk[chunksCount];
         long nextStart = 0;
         long maxChunkLength = Length / chunksCount + 50; // Conservative margin
         for (int i = 0; i < chunks.Length; i++)
         {
-            var chunk = chunks[i] = new Chunk(PtrStart, nextStart, maxChunkLength, Length);
+            var chunk = chunks[i] = new Chunk(fileHandle, nextStart, maxChunkLength, Length);
             nextStart += chunk.Length;
         }
         
