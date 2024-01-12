@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace OneBillionRowsChallenge;
 
@@ -24,12 +25,11 @@ public unsafe class Parser
         var chunks = Chunk.GetChunks(parallelism, bytePtr, fileSize);
         for (int i = 0; i < parallelism; i++)
         {
-            threads[i] = new Thread(_ => Process(chunks[i]));
+            var chunk = chunks[i];
+            threads[i] = new Thread(_ => Process(chunk));
             threads[i].Start();
         }
         
-        Debug.Assert(chunks.Sum(x => x.Length) == fileSize, "Sum of chunks lengths must be equal to total file size!");
-
         // Wait for all threads to complete
         for (int i = 0; i < parallelism; i++)
         {
@@ -41,7 +41,7 @@ public unsafe class Parser
     {
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
         // the odds for instruction level parallelization
-        const int subchunksCount = 4;
+        const int subchunksCount = 2;
         var subchunks = Chunk.GetChunks(subchunksCount, chunk.PtrStart, chunk.Length);
         
         for (int i = 0; i < subchunks.Length; i++)
@@ -53,6 +53,8 @@ public unsafe class Parser
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ProcessSubchunk(Chunk chunk)
     {
+        Dictionary<Hash, int> data = new(500);
+        
         ref byte startRef = ref Unsafe.AsRef<byte>(chunk.PtrStart);
         ref byte endRef = ref Unsafe.AsRef<byte>(chunk.PtrStart + chunk.Length);
 
@@ -63,8 +65,13 @@ public unsafe class Parser
             int newLineIndex = Utils.IndexOf(ref startRef, 50, (byte)'\n');
             
             int temp = Utils.ParseIntP10(ref Unsafe.Add(ref startRef, separatorIndex + 1), newLineIndex - separatorIndex - 1);
+
+            ref int d = ref CollectionsMarshal.GetValueRefOrAddDefault(data, Hash.GetHash(ref startRef, separatorIndex), out bool _);
+
+            // Quick and dirty for test purposes
+            d += temp;
             
-            // Todo: compute min/max/mean and insert in map
+            // Todo: compute min/max/mean
             
             startRef = ref Unsafe.Add(ref startRef, newLineIndex + 1);
         }
@@ -112,6 +119,9 @@ public unsafe class Chunk
             var chunk = chunks[i] = new Chunk(ptr, nextStart, maxChunkLength, length);
             nextStart += chunk.Length;
         }
+        
+        Debug.Assert(chunks.Sum(x => x.Length) == length, "Sum of chunks lengths must be equal to total space size!");
+        
         return chunks;
     }
 }
