@@ -19,7 +19,7 @@ public unsafe class Parser
         viewAccessor.SafeMemoryMappedViewHandle.AcquirePointer(ref bytePtr);
 
         // Start processing
-        int parallelism = Environment.ProcessorCount;
+        int parallelism = 4 * Environment.ProcessorCount;
         var threads = new Thread[parallelism];
         var wholeChunk = new Chunk(bytePtr, 0, fileSize, fileSize);
         var chunks = wholeChunk.Split(parallelism);
@@ -53,7 +53,7 @@ public unsafe class Parser
     {
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
         // the odds for instruction level parallelization
-        const int subchunksCount = 2;
+        const int subchunksCount = 8;
         var subchunks = chunk.Split(subchunksCount);
         
         for (int i = 0; i < subchunks.Length; i++)
@@ -70,7 +70,7 @@ public unsafe class Parser
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ProcessSubchunk(Chunk chunk)
     {
-        Dictionary<Hash, MinMaxMean> data = new(500);
+        Dictionary<Hash, MinMaxMean> data = new(500, new Hash.HashComparer());
         
         ref byte startRef = ref Unsafe.AsRef<byte>(chunk.PtrStart);
         ref byte endRef = ref Unsafe.AsRef<byte>(chunk.PtrStart + chunk.Length);
@@ -84,12 +84,11 @@ public unsafe class Parser
             int temp = Utils.ParseIntP10(ref Unsafe.Add(ref startRef, separatorIndex + 1), newLineIndex - separatorIndex - 1);
 
             ref MinMaxMean d = ref CollectionsMarshal.GetValueRefOrAddDefault(data, Hash.GetHash(ref startRef, separatorIndex), out bool exists);
-            if (!exists)
-            {
+            if (!exists) {
                 d = new MinMaxMean();
             }
             d.Add(temp);
-            
+
             startRef = ref Unsafe.Add(ref startRef, newLineIndex + 1);
         }
 

@@ -9,13 +9,38 @@ namespace OneBillionRowsChallenge;
 public static class Utils
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IndexOf(ref byte start, int length, byte needle)
+    public unsafe static int IndexOf(ref byte start, int length, byte needle)
     {
+        //var span = new ReadOnlySpan<byte>(Unsafe.AsPointer(ref start), length);
+        //return span.IndexOf(needle);
+
         int offset = 0;
-        ref Vector128<byte> ptr = ref Unsafe.As<byte, Vector128<byte>>(ref start);
-    NEXT:
+        
+
+        if (Avx2.IsSupported) {
+            ref Vector256<byte> ptr = ref Unsafe.As<byte, Vector256<byte>>(ref start);
+        NEXT:
+            var vec = Avx2.CompareEqual(Vector256.Create(needle), ptr);
+            int mask = Avx2.MoveMask(vec);
+            int tzc = BitOperations.TrailingZeroCount(mask);
+            if (tzc == 32) {
+                offset += 32;
+                if (offset > length) {
+                    return -1;
+                }
+                ptr = ref Unsafe.Add(ref ptr, 1);
+                goto NEXT;
+            }
+            int pos = tzc + offset;
+            if (pos > length) {
+                return -1;
+            }
+            return pos;
+        }
         if (Sse2.IsSupported)
         {
+            ref Vector128<byte> ptr = ref Unsafe.As<byte, Vector128<byte>>(ref start);
+        NEXT:
             var vec = Sse2.CompareEqual(Vector128.Create(needle), ptr);
             int mask = Sse2.MoveMask(vec);
             int tzc = BitOperations.TrailingZeroCount(mask);
@@ -29,15 +54,17 @@ public static class Utils
                 ptr = ref Unsafe.Add(ref ptr, 1);
                 goto NEXT;
             }
-            int pos = tzc / 8 + offset;         
+            int pos = tzc + offset;         
             if (pos > length)
             {
                 return -1;
             }
             return pos;
         }
-        else if (AdvSimd.IsSupported)
+        if (AdvSimd.IsSupported)
         {
+            ref Vector128<byte> ptr = ref Unsafe.As<byte, Vector128<byte>>(ref start);
+        NEXT:
             var vec = AdvSimd.CompareEqual(Vector128.Create(needle), ptr);
             var vec64 = Unsafe.As<Vector128<byte>, Vector128<ulong>>(ref vec);
             int lzcLow = BitOperations.TrailingZeroCount(AdvSimd.Extract(vec64, 0));
