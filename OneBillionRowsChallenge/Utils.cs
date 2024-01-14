@@ -12,9 +12,6 @@ public static class Utils
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public unsafe static int IndexOf(ref byte start, int length, byte byteToFind)
     {
-        //var span = new ReadOnlySpan<byte>(Unsafe.AsPointer(ref start), length);
-        //return span.IndexOf(needle);
-
         int offset = 0;
 
         if (Avx2.IsSupported) {

@@ -56,7 +56,7 @@ public unsafe class Parser
 
         // Print results
         Console.WriteLine($"{{{string.Join(", ", map
-            .Select(x => (_cityHashToName[x.Key], x.Value))
+            .Select(x => (_cityHashToName.TryGetValue(x.Key, out string? cityName) ? cityName : "Error", x.Value))
             .OrderBy(x => x.Item1)
             .Select(x => $"{x.Item1}={x.Value}"))}}}");
     }
@@ -69,7 +69,7 @@ public unsafe class Parser
 
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
         // the odds for instruction level parallelization
-        var subchunks = new[] { chunk }; // chunk.Split(fileHandle, SUBCHUNKS_COUNT);
+        var subchunks = chunk.Split(fileHandle, SUBCHUNKS_COUNT);
 
         for (int i = 0; i < subchunks.Length; i++)
         {
@@ -78,7 +78,13 @@ public unsafe class Parser
             int offsetInBuffer = BUFFER_SIZE;
 
             // Buffer for buffered read
-            Span<byte> buffer = new byte[BUFFER_SIZE];
+#if BUFFER_STACK
+            Span<byte> buffer = stackalloc byte[BUFFER_SIZE];
+#else
+            nint bufferPtr = Marshal.AllocHGlobal(BUFFER_SIZE);
+            Span<byte> buffer = new Span<byte>(bufferPtr.ToPointer(), BUFFER_SIZE);
+#endif
+
             ref byte b = ref MemoryMarshal.AsRef<byte>(buffer);
 
             for (long offsetInFile = 0; offsetInFile < subchunk.Length;) {
@@ -106,6 +112,10 @@ public unsafe class Parser
                 offsetInFile += newLineIndex + 1;
                 offsetInBuffer += newLineIndex + 1;
             }
+
+#if !BUFFER_STACK
+            Marshal.FreeHGlobal(bufferPtr);
+#endif
         }
 
         return map;

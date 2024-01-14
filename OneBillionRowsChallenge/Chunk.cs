@@ -10,13 +10,13 @@ public unsafe readonly struct Chunk
     public readonly long Start;
     public readonly long Length;
 
-    internal Chunk(SafeFileHandle fileHandle, long start, long maxLength, long fileSize)
+    internal Chunk(SafeFileHandle fileHandle, long start, long maxLength, long parentEnd)
     {
         // Realign chunk end
-        if (start + maxLength >= fileSize)
+        if (start + maxLength >= parentEnd)
         {
             // Last chunk, so we make sure we don't go beyond bounds
-            maxLength = fileSize - start;
+            maxLength = parentEnd - start;
         }
         else
         {
@@ -46,7 +46,7 @@ public unsafe readonly struct Chunk
         long maxChunkLength = Length / chunksCount + MAX_ENTRY_WIDTH; // Conservative margin
         for (int i = 0; i < chunks.Length; i++)
         {
-            var chunk = chunks[i] = new Chunk(fileHandle, nextStart, maxChunkLength, Length);
+            var chunk = chunks[i] = new Chunk(fileHandle, nextStart, maxChunkLength, Start + Length);
             nextStart += chunk.Length;
         }
         
