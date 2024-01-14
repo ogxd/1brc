@@ -28,10 +28,12 @@ public unsafe class Parser
         var maps = new MinMaxMeanByCityMap[_parallelism];
         var wholeChunk = new Chunk(fileHandle, 0, fileSize, fileSize);
         var chunks = wholeChunk.Split(fileHandle, _parallelism);
+        fileHandle.Dispose();
+
         for (int i = 0; i < _parallelism; i++) {
             int index = i;
             var chunk = chunks[i];
-            threads[i] = new Thread(_ => maps[index] = Process(fileHandle, chunk));
+            threads[i] = new Thread(_ => maps[index] = Process(filePath, chunk));
             threads[i].Priority = ThreadPriority.Normal;
             threads[i].Start();
         }
@@ -60,8 +62,9 @@ public unsafe class Parser
     }
 
     [SkipLocalsInit]
-    private MinMaxMeanByCityMap Process(SafeFileHandle fileHandle, Chunk chunk)
+    private MinMaxMeanByCityMap Process(string filePath, Chunk chunk)
     {
+        SafeFileHandle fileHandle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var map = new MinMaxMeanByCityMap(MAP_WIDTH, MAP_DEPTH);
 
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves

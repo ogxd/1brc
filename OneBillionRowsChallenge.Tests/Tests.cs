@@ -1,3 +1,7 @@
+using Microsoft.Win32.SafeHandles;
+using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using System.Text;
 
 namespace OneBillionRowsChallenge.Tests;
@@ -49,5 +53,200 @@ public class Tests
         }).ToHashSet();
 
         Assert.That(set.Count, Is.EqualTo(words.Length));
+    }
+
+    const string filePath = "..\\..\\..\\..\\..\\measurements1B.txt";
+
+    [Explicit]
+    [Test]
+    public unsafe void ScanRandomAccessCopyToHeap() {
+        // Get file size
+        SafeFileHandle fileHandle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        long fileSize = RandomAccess.GetLength(fileHandle);
+
+        nint intptr = Marshal.AllocHGlobal(new nint(fileSize));
+        byte* ptr = (byte*)intptr.ToPointer();
+
+        int width = 1024 * 1024 * 8;
+        long pos = 0;
+        while (pos < fileSize) {
+            var span = new Span<byte>(ptr/* + pos*/, (int)Math.Min(fileSize - pos, width));
+            int readBytes = RandomAccess.Read(fileHandle, span, pos);
+            pos += readBytes;
+        }
+
+        Marshal.FreeHGlobal(intptr);
+        Console.WriteLine("Position: " + pos);
+    }
+
+    [Explicit]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(4)]
+    [TestCase(8)]
+    public unsafe void ScanRandomAccessCopyToStack(int parallelism) {
+        // Get file size
+        using SafeFileHandle fileHandle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        long fileSize = RandomAccess.GetLength(fileHandle);
+
+        int width = 1024 * 1024 * 1;
+
+        long portionSize = fileSize / parallelism;
+        long r = Enumerable.Range(0, parallelism)
+            .AsParallel()
+            .Select(x => {
+                byte* ptr = stackalloc byte[width];
+                long pos = x * portionSize;
+                long end = (x + 1) * portionSize;
+                while (pos < end) {
+                    var dstSpan = new Span<byte>(ptr, (int)Math.Min(end - pos, width));
+                    int readBytes = RandomAccess.Read(fileHandle, dstSpan, pos);
+                    pos += readBytes;
+                }
+                return pos - x * portionSize;
+            })
+            .Sum();
+
+        Console.WriteLine("Position: " + r);
+    }
+
+    [Explicit]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(4)]
+    [TestCase(8)]
+    public unsafe void ScanRandomAccessCopyToStack_PerThreadHandle(int parallelism) {
+        // Get file size
+        using SafeFileHandle fileHandle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        long fileSize = RandomAccess.GetLength(fileHandle);
+        fileHandle.Dispose();
+
+        int width = 1024 * 1024 * 1;
+
+        long portionSize = fileSize / parallelism;
+        long r = Enumerable.Range(0, parallelism)
+            .AsParallel()
+            .Select(x => {
+                using SafeFileHandle f = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                byte* ptr = stackalloc byte[width];
+                long pos = x * portionSize;
+                long end = (x + 1) * portionSize;
+                while (pos < end) {
+                    var dstSpan = new Span<byte>(ptr, (int)Math.Min(end - pos, width));
+                    int readBytes = RandomAccess.Read(f, dstSpan, pos);
+                    pos += readBytes;
+                }
+                return pos - x * portionSize;
+            })
+            .Sum();
+
+        Console.WriteLine("Position: " + r);
+    }
+
+    [Explicit]
+    [Test]
+    public unsafe void ScanMmapCopyToHeap() {
+        // Get file size
+        FileInfo fileInfo = new FileInfo(filePath);
+        long fileSize = fileInfo.Length;
+
+        using var memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
+        using MemoryMappedViewAccessor viewAccessor = memoryMappedFile.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+        byte* srcPtr = null;
+        viewAccessor.SafeMemoryMappedViewHandle.AcquirePointer(ref srcPtr);
+
+        nint intptr = Marshal.AllocHGlobal(new nint(fileSize));
+        byte* ptr = (byte*)intptr.ToPointer();
+
+        int width = 1024 * 1024 * 8;
+        long pos = 0;
+        while (pos < fileSize) {
+            int l = (int)Math.Min(fileSize - pos, width);
+            var srcSpan = new Span<byte>(srcPtr, l);
+            var span = new Span<byte>(ptr + pos, l);
+            srcSpan.CopyTo(span);
+            srcPtr += l;
+            pos += l;
+        }
+
+        Marshal.FreeHGlobal(intptr);
+        Console.WriteLine("Position: " + pos);
+    }
+
+    [Explicit]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(4)]
+    [TestCase(8)]
+    public unsafe void ScanMmapCopyToStack(int parallelism) {
+        // Get file size
+        FileInfo fileInfo = new FileInfo(filePath);
+        long fileSize = fileInfo.Length;
+
+        using var memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
+        using MemoryMappedViewAccessor viewAccessor = memoryMappedFile.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+        byte* srcPtrO = null;
+        viewAccessor.SafeMemoryMappedViewHandle.AcquirePointer(ref srcPtrO);
+
+        int width = 1024 * 1024 * 1;
+
+        long portionSize = fileSize / parallelism;
+        long r = Enumerable.Range(0, parallelism)
+            .AsParallel()
+            .Select(x => {
+                byte* ptr = stackalloc byte[width];
+                long pos = x * portionSize;
+                long end = (x + 1) * portionSize;
+                byte* srcPtr = srcPtrO + pos;
+                while (pos < end) {
+                    int l = (int)Math.Min(end - pos, width);
+                    var srcSpan = new Span<byte>(srcPtr, l);
+                    var span = new Span<byte>(ptr, l);
+                    srcSpan.CopyTo(span);
+                    srcPtr += l;
+                    pos += l;
+                }
+                return pos - x * portionSize;
+            })
+            .Sum();
+
+        Console.WriteLine("Position: " + r);
+    }
+
+    [Explicit]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(4)]
+    [TestCase(8)]
+    public unsafe void ScanMmapToVec256(int parallelism) {
+        // Get file size
+        FileInfo fileInfo = new FileInfo(filePath);
+        long fileSize = fileInfo.Length;
+
+        using var memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
+        using MemoryMappedViewAccessor viewAccessor = memoryMappedFile.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read);
+        byte* srcPtrO = null;
+        viewAccessor.SafeMemoryMappedViewHandle.AcquirePointer(ref srcPtrO);
+
+        int width = 1024 * 1024 * 1;
+
+        long portionSize = fileSize / parallelism;
+        long r = Enumerable.Range(0, parallelism)
+            .AsParallel()
+            .Select(x => {
+                byte* ptr = stackalloc byte[width];
+                long pos = x * portionSize;
+                long end = (x + 1) * portionSize;
+                byte* srcPtr = srcPtrO + pos;
+                while (pos < end) {
+                    var vec = Vector256.Load(srcPtr);
+                    srcPtr += 32;
+                    pos += 32;
+                }
+                return pos - x * portionSize;
+            })
+            .Sum();
+
+        Console.WriteLine("Position: " + r);
     }
 }
