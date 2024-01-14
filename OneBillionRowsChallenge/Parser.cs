@@ -15,7 +15,7 @@ public unsafe class Parser
     private const int SUBCHUNKS_COUNT = 1;
 
     private ConcurrentDictionary<Hash, string> _cityHashToName = new();
-    private int _parallelism = Environment.ProcessorCount;
+    private int _parallelism = 1 * Environment.ProcessorCount;
 
     public void Parse(string filePath)
     {
@@ -32,7 +32,7 @@ public unsafe class Parser
             int index = i;
             var chunk = chunks[i];
             threads[i] = new Thread(_ => maps[index] = Process(fileHandle, chunk));
-            threads[i].Priority = ThreadPriority.Highest;
+            threads[i].Priority = ThreadPriority.Normal;
             threads[i].Start();
         }
 
@@ -45,6 +45,7 @@ public unsafe class Parser
 
         // Merge results
         var map = new MinMaxMeanByCityMap(MAP_WIDTH, MAP_DEPTH);
+
         for (int i = 0; i < _parallelism; i++) {
             foreach (var pair in maps[i]) {
                 map.Add(pair.Key, pair.Value);
@@ -65,7 +66,7 @@ public unsafe class Parser
 
         // Computing subchunks allows breaking down the chunk reading dependency chain, which inherently improves
         // the odds for instruction level parallelization
-        var subchunks = chunk.Split(fileHandle, SUBCHUNKS_COUNT);
+        var subchunks = new[] { chunk }; // chunk.Split(fileHandle, SUBCHUNKS_COUNT);
 
         for (int i = 0; i < subchunks.Length; i++)
         {

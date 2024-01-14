@@ -42,8 +42,8 @@ public unsafe readonly struct Chunk
     public Chunk[] Split(SafeFileHandle fileHandle, int chunksCount)
     {
         var chunks = new Chunk[chunksCount];
-        long nextStart = 0;
-        long maxChunkLength = Length / chunksCount + 50; // Conservative margin
+        long nextStart = Start;
+        long maxChunkLength = Length / chunksCount + MAX_ENTRY_WIDTH; // Conservative margin
         for (int i = 0; i < chunks.Length; i++)
         {
             var chunk = chunks[i] = new Chunk(fileHandle, nextStart, maxChunkLength, Length);
